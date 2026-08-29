@@ -14,6 +14,11 @@ class QueuedTaskResponse
 {
     public function __construct(protected ?PendingDispatch $dispatchable = null) {}
 
+    public function __call(string $method, array $arguments): mixed
+    {
+        return $this->dispatchable?->{$method}(...$arguments);
+    }
+
     public function then(Closure $callback): self
     {
         $this->dispatchable?->getJob()->then($callback);
@@ -26,10 +31,5 @@ class QueuedTaskResponse
         $this->dispatchable?->getJob()->catch($callback);
 
         return $this;
-    }
-
-    public function __call(string $method, array $arguments): mixed
-    {
-        return $this->dispatchable?->{$method}(...$arguments);
     }
 }

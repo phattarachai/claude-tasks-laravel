@@ -31,9 +31,9 @@ final readonly class TaskOptions
     public static function resolve(Task $task): self
     {
         return new self(
-            model: self::attribute($task, Model::class)?->value ?? (string) config('claude-tasks.model'),
-            timeout: self::attribute($task, Timeout::class)?->value ?? (int) config('claude-tasks.timeout'),
-            maxTurns: self::attribute($task, MaxTurns::class)?->value ?? (int) config('claude-tasks.max_turns'),
+            model: self::attribute($task, Model::class)->value ?? (string) config('claude-tasks.model'),
+            timeout: self::attribute($task, Timeout::class)->value ?? (int) config('claude-tasks.timeout'),
+            maxTurns: self::attribute($task, MaxTurns::class)->value ?? (int) config('claude-tasks.max_turns'),
             allowedTools: self::allowedToolsFor($task),
         );
     }
@@ -56,7 +56,7 @@ final readonly class TaskOptions
      */
     private static function allowedToolsFor(Task $task): array
     {
-        $declared = self::attribute($task, AllowedTools::class)?->tools ?? [];
+        $declared = self::attribute($task, AllowedTools::class)->tools ?? [];
 
         $withRead = $task instanceof HasAttachments && $task->attachments() !== []
             ? [...$declared, 'Read']

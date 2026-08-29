@@ -1,1 +1,7 @@
 parameters:
+	ignoreErrors:
+		-
+			message: '#^Trait Phattarachai\\ClaudeTasksLaravel\\Concerns\\Runnable is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: src/Concerns/Runnable.php
