@@ -46,7 +46,6 @@ abstract class TestCase extends BaseTestCase
         ]);
 
         $app['config']->set('claude-tasks.binary', '/usr/local/bin/claude');
-        $app['config']->set('claude-tasks.model', 'claude-opus-5');
 
         $app['config']->set('task-runs.routes.enabled', false);
         $app['config']->set('task-runs.broadcast.enabled', false);

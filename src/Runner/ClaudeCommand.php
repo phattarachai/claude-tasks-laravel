@@ -8,8 +8,8 @@ use Phattarachai\ClaudeTasksLaravel\Support\TaskOptions;
 
 /**
  * The argv for one headless run. `env -u` strips the nested-session guards
- * (belt) on top of the Process-level env removal (braces); the model is always
- * pinned; tools appear only when the Task declared them.
+ * (belt) on top of the Process-level env removal (braces); --model appears only
+ * when pinned by config or attribute; tools only when the Task declared them.
  */
 final readonly class ClaudeCommand
 {
@@ -25,9 +25,12 @@ final readonly class ClaudeCommand
             $binary,
             '-p', $prompt,
             '--output-format', 'json',
-            '--model', $options->model,
             '--max-turns', (string) $options->maxTurns,
         ];
+
+        if ($options->model !== null) {
+            $argv = [...$argv, '--model', $options->model];
+        }
 
         if ($options->allowedTools !== []) {
             $argv = [...$argv, '--allowedTools', ...$options->allowedTools];

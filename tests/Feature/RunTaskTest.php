@@ -31,7 +31,7 @@ it('runs a task and returns schema-validated output with usage', function (): vo
         ->and($response->usage->sessionId)->toBe('sess-0123');
 });
 
-it('builds an argv with the nested-session guard and a pinned model and no tools by default', function (): void {
+it('builds an argv with the nested-session guard, no model pin, and no tools by default', function (): void {
     Process::fake(['*' => Process::result(claudeEnvelope(validStatementOutput()))]);
 
     ClaudeTasks::run(new AnalyzeStatementTask);
@@ -44,9 +44,23 @@ it('builds an argv with the nested-session guard and a pinned model and no tools
             && $argv[5] === '/usr/local/bin/claude'
             && $argv[6] === '-p'
             && in_array('--output-format', $argv, true)
-            && $argv[array_search('--model', $argv, true) + 1] === 'claude-opus-5'
+            && ! in_array('--model', $argv, true)
             && ! in_array('--allowedTools', $argv, true)
             && ! in_array('--mcp-config', $argv, true);
+    });
+});
+
+it('pins --model when the config sets one', function (): void {
+    config()->set('claude-tasks.model', 'claude-opus-5');
+    Process::fake(['*' => Process::result(claudeEnvelope(validStatementOutput()))]);
+
+    ClaudeTasks::run(new AnalyzeStatementTask);
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $argv = $process->command;
+
+        return is_array($argv)
+            && $argv[array_search('--model', $argv, true) + 1] === 'claude-opus-5';
     });
 });
 

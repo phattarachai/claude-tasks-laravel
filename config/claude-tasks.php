@@ -9,8 +9,8 @@ return [
     // Claude Code OAuth credentials file, read by claude-tasks:doctor and auth-failure detection.
     'credentials_path' => env('CLAUDE_TASKS_CREDENTIALS_PATH', (getenv('HOME') ?: '').'/.claude/.credentials.json'),
 
-    // Every run pins --model explicitly; override per Task with the #[Model] attribute.
-    'model' => env('CLAUDE_TASKS_MODEL', 'claude-opus-5'),
+    // Null follows the CLI's own default model; set to pin, or per Task via #[Model].
+    'model' => env('CLAUDE_TASKS_MODEL'),
 
     // Process timeout in seconds; override per Task with the #[Timeout] attribute.
     'timeout' => (int) env('CLAUDE_TASKS_TIMEOUT', 300),

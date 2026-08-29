@@ -22,7 +22,7 @@ final readonly class TaskOptions
      * @param  list<string>  $allowedTools
      */
     public function __construct(
-        public string $model,
+        public ?string $model,
         public int $timeout,
         public int $maxTurns,
         public array $allowedTools,
@@ -31,7 +31,7 @@ final readonly class TaskOptions
     public static function resolve(Task $task): self
     {
         return new self(
-            model: self::attribute($task, Model::class)->value ?? (string) config('claude-tasks.model'),
+            model: self::attribute($task, Model::class)->value ?? config('claude-tasks.model'),
             timeout: self::attribute($task, Timeout::class)->value ?? (int) config('claude-tasks.timeout'),
             maxTurns: self::attribute($task, MaxTurns::class)->value ?? (int) config('claude-tasks.max_turns'),
             allowedTools: self::allowedToolsFor($task),

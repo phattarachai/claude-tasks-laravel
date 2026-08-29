@@ -19,7 +19,7 @@ it('records a successful run as a task_runs row with usage in options', function
         ->and($run->status)->toBe(TaskRun::SUCCESS)
         ->and($run->dispatched_by)->toBe('claude-tasks')
         ->and($run->options['task'])->toBe(AnalyzeStatementTask::class)
-        ->and($run->options['model'])->toBe('claude-opus-5')
+        ->and($run->options['model'])->toBeNull()
         ->and($run->options['cost_usd'])->toBe(0.0421)
         ->and($run->options['num_turns'])->toBe(3)
         ->and($run->options['session_id'])->toBe('sess-0123')
