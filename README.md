@@ -24,7 +24,7 @@ JSON** back, with cost / turns / duration / session id attached. The API deliber
   `php artisan boost:mcp`; pair it with the read-only `mcp__laravel-boost__database-query` tool, never tinker.
 - **Attachments allow exactly `Read`.** Declaring `attachments()` lists the files in the prompt and allowlists the
   Read tool — nothing else.
-- **The model is always pinned** (`--model` on every invocation) and `--max-turns` always capped.
+- **The model follows the CLI's default** unless pinned — `CLAUDE_TASKS_MODEL` / `claude-tasks.model` or a Task's `#[Model]` adds `--model`; `--max-turns` is always capped.
 - **Failures throw typed exceptions** — error text is never returned as a result.
 - Output that is not JSON, or JSON that misses the declared schema, throws `InvalidTaskOutput` with the validation
   errors and the raw output attached.
