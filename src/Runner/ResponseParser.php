@@ -34,6 +34,17 @@ class ResponseParser
     }
 
     /**
+     * One `result` line out of a `--output-format stream-json` run — the same envelope
+     * the synchronous path receives on its own, minus the surrounding decode.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    public function parseResultLine(array $line): ParsedResult
+    {
+        return $this->fromSingleResult($line);
+    }
+
+    /**
      * @param  array<string, mixed>  $decoded
      */
     private function isSingleResult(array $decoded): bool
@@ -47,7 +58,7 @@ class ResponseParser
     private function fromSingleResult(array $decoded): ParsedResult
     {
         return new ParsedResult(
-            text: (string) $decoded['result'],
+            text: (string) ($decoded['result'] ?? ''),
             usage: $this->usageFrom($decoded, numTurns: $decoded['num_turns'] ?? null),
             isError: (bool) ($decoded['is_error'] ?? false) || ($decoded['subtype'] ?? 'success') !== 'success',
         );

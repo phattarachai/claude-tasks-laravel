@@ -26,6 +26,23 @@ function claudeEnvelope(array $output, array $overrides = []): string
 }
 
 /**
+ * The four `--output-format stream-json` lines of one healthy run, in the order the
+ * CLI writes them: init, an assistant text turn, a tool call, the result envelope.
+ *
+ * @param  array<string, mixed>  $resultOverrides
+ * @return list<string>
+ */
+function streamLines(array $resultOverrides = []): array
+{
+    return [
+        (string) json_encode(['type' => 'system', 'subtype' => 'init', 'session_id' => 'sess-0123', 'model' => 'claude-opus-5', 'tools' => ['Read']]),
+        (string) json_encode(['type' => 'assistant', 'message' => ['content' => [['type' => 'text', 'text' => 'อ่านใบกำกับ']]], 'session_id' => 'sess-0123']),
+        (string) json_encode(['type' => 'assistant', 'message' => ['content' => [['type' => 'tool_use', 'id' => 'tu_1', 'name' => 'Read', 'input' => ['file_path' => '/tmp/invoice.jpg']]]], 'session_id' => 'sess-0123']),
+        claudeEnvelope(validStatementOutput(), $resultOverrides),
+    ];
+}
+
+/**
  * @return array<string, mixed>
  */
 function validStatementOutput(): array

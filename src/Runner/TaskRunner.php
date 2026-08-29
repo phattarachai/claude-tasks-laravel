@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Phattarachai\ClaudeTasksLaravel\Runner;
 
+use Closure;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Phattarachai\ClaudeTasksLaravel\Contracts\Task;
 use Phattarachai\ClaudeTasksLaravel\Events\TaskCompleted;
@@ -16,14 +18,21 @@ use Phattarachai\ClaudeTasksLaravel\Mcp\McpConfigFile;
 use Phattarachai\ClaudeTasksLaravel\Prompt\PromptComposer;
 use Phattarachai\ClaudeTasksLaravel\Responses\TaskResponse;
 use Phattarachai\ClaudeTasksLaravel\Schema\OutputValidator;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
+use Phattarachai\ClaudeTasksLaravel\Streaming\StreamParser;
 use Phattarachai\ClaudeTasksLaravel\Support\TaskOptions;
 use Phattarachai\ClaudeTasksLaravel\TaskRuns\TaskRunRecorder;
 use Throwable;
 
 /**
- * One synchronous headless run: compose prompt, invoke the CLI, parse the JSON
- * envelope, validate against the Task's schema. Failures always throw — error
- * text is never returned as a result.
+ * One headless run: compose prompt, invoke the CLI, parse the JSON envelope,
+ * validate against the Task's schema. Failures always throw — error text is never
+ * returned as a result.
+ *
+ * A progress listener switches the run to `--output-format stream-json`: the same
+ * process, read line by line, with events delivered as they arrive. The schema gate,
+ * the auth/process failure classification, and the timeout are identical either way.
  */
 class TaskRunner
 {
@@ -36,7 +45,10 @@ class TaskRunner
         private readonly TaskRunRecorder $recorder,
     ) {}
 
-    public function run(Task $task): TaskResponse
+    /**
+     * @param  (Closure(ProgressEvent): void)|null  $onProgress
+     */
+    public function run(Task $task, ?Closure $onProgress = null): TaskResponse
     {
         $options = TaskOptions::resolve($task);
 
@@ -45,7 +57,7 @@ class TaskRunner
         $run = $this->recorder->start($task, $options);
 
         try {
-            $response = $this->execute($task, $options);
+            $response = $this->execute($task, $options, $onProgress);
 
             $this->recorder->success($run, $response->usage);
 
@@ -61,17 +73,20 @@ class TaskRunner
         }
     }
 
-    private function execute(Task $task, TaskOptions $options): TaskResponse
+    /**
+     * @param  (Closure(ProgressEvent): void)|null  $onProgress
+     */
+    private function execute(Task $task, TaskOptions $options, ?Closure $onProgress): TaskResponse
     {
         $mcpConfigPath = McpConfigFile::writeFor($task);
 
         try {
-            $result = $this->invoke($task, $options, $mcpConfigPath);
+            $parsed = $onProgress === null
+                ? $this->parser->parse($this->invoke($task, $options, $mcpConfigPath)->output())
+                : $this->stream($task, $options, $mcpConfigPath, $onProgress);
         } finally {
             McpConfigFile::cleanup($mcpConfigPath);
         }
-
-        $parsed = $this->parser->parse($result->output());
 
         if ($parsed->isError) {
             throw $this->classifyFailure($parsed->text, ClaudeProcessFailed::errorResult($parsed->text));
@@ -86,20 +101,74 @@ class TaskRunner
 
     private function invoke(Task $task, TaskOptions $options, ?string $mcpConfigPath): ProcessResult
     {
-        $command = ClaudeCommand::build($this->binary->path(), $this->composer->compose($task), $options, $mcpConfigPath);
+        $result = $this->pending($options)->run($this->command($task, $options, $mcpConfigPath)->argv);
 
-        $result = Process::path(base_path())
-            ->timeout($options->timeout)
-            ->env(['CLAUDECODE' => false, 'AI_AGENT' => false])
-            ->run($command->argv);
-
-        if ($result->failed()) {
-            $output = trim($result->errorOutput()."\n".$result->output());
-
-            throw $this->classifyFailure($output, ClaudeProcessFailed::fromResult($result));
-        }
+        $this->ensureSucceeded($result);
 
         return $result;
+    }
+
+    /**
+     * Start the CLI, read its newline-delimited events as the pipe delivers them, and
+     * keep the closing `result` line as the run's parsed outcome.
+     *
+     * @param  Closure(ProgressEvent): void  $onProgress
+     */
+    private function stream(Task $task, TaskOptions $options, ?string $mcpConfigPath, Closure $onProgress): ParsedResult
+    {
+        $streamParser = new StreamParser($this->parser);
+        $result = null;
+
+        /** @param list<ProgressEvent> $events */
+        $deliver = function (array $events) use ($onProgress, &$result): void {
+            foreach ($events as $event) {
+                $result = $event instanceof ResultReceived ? $event : $result;
+
+                $onProgress($event);
+            }
+        };
+
+        $invoked = $this->pending($options)->start(
+            $this->command($task, $options, $mcpConfigPath, streaming: true)->argv,
+            function (string $type, string $chunk) use ($streamParser, $deliver): void {
+                $deliver($type === 'out' ? $streamParser->push($chunk) : []);
+            },
+        );
+
+        $processResult = $invoked->wait();
+
+        $deliver($streamParser->flush());
+
+        $this->ensureSucceeded($processResult);
+
+        if (! $result instanceof ResultReceived) {
+            throw ClaudeProcessFailed::unparseableOutput($processResult->output());
+        }
+
+        return new ParsedResult($result->text, $result->usage, $result->isError);
+    }
+
+    private function pending(TaskOptions $options): PendingProcess
+    {
+        return Process::path(base_path())
+            ->timeout($options->timeout)
+            ->env(['CLAUDECODE' => false, 'AI_AGENT' => false]);
+    }
+
+    private function command(Task $task, TaskOptions $options, ?string $mcpConfigPath, bool $streaming = false): ClaudeCommand
+    {
+        return ClaudeCommand::build($this->binary->path(), $this->composer->compose($task), $options, $mcpConfigPath, $streaming);
+    }
+
+    private function ensureSucceeded(ProcessResult $result): void
+    {
+        if (! $result->failed()) {
+            return;
+        }
+
+        $output = trim($result->errorOutput()."\n".$result->output());
+
+        throw $this->classifyFailure($output, ClaudeProcessFailed::fromResult($result));
     }
 
     private function classifyFailure(string $output, ClaudeProcessFailed $fallback): ClaudeProcessFailed|ClaudeAuthExpired

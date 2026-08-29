@@ -12,6 +12,8 @@ use Phattarachai\ClaudeTasksLaravel\Contracts\Task;
 use Phattarachai\ClaudeTasksLaravel\Responses\Data\Usage;
 use Phattarachai\ClaudeTasksLaravel\Responses\QueuedTaskResponse;
 use Phattarachai\ClaudeTasksLaravel\Responses\TaskResponse;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
 use PHPUnit\Framework\Assert as PHPUnit;
 
 class FakeClaudeTasksManager extends ClaudeTasksManager
@@ -28,15 +30,37 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
 
     /**
      * @param  array<class-string<Task>, array<string, mixed>|Closure>  $outputs
+     * @param  array<class-string<Task>, list<ProgressEvent>>  $progress
      */
-    public function __construct(protected array $outputs = []) {}
+    public function __construct(protected array $outputs = [], protected array $progress = []) {}
+
+    /**
+     * Canned progress events for a Task, replayed in order to whatever listener the
+     * run attaches. A closing {@see ResultReceived} is appended unless the sequence
+     * already carries one, so a fake ends the way a real stream does.
+     *
+     * @param  class-string<Task>  $task
+     * @param  list<ProgressEvent>  $events
+     */
+    public function withProgress(string $task, array $events): static
+    {
+        $this->progress[$task] = $events;
+
+        return $this;
+    }
 
     #[Override]
-    public function run(Task $task): TaskResponse
+    public function run(Task $task, ?Closure $onProgress = null): TaskResponse
     {
         $this->ran[$task::class][] = $task;
 
-        return $this->responseFor($task);
+        $response = $this->responseFor($task);
+
+        if ($onProgress !== null) {
+            $this->replayProgress($task, $response, $onProgress);
+        }
+
+        return $response;
     }
 
     #[Override]
@@ -87,6 +111,22 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
     {
         PHPUnit::assertSame([], $this->ran, 'Tasks were run unexpectedly.');
         PHPUnit::assertSame([], $this->queued, 'Tasks were queued unexpectedly.');
+    }
+
+    /**
+     * @param  Closure(ProgressEvent): void  $onProgress
+     */
+    private function replayProgress(Task $task, TaskResponse $response, Closure $onProgress): void
+    {
+        $configured = $this->progress[$task::class] ?? [];
+
+        $events = new Collection($configured)->contains(fn (ProgressEvent $event): bool => $event instanceof ResultReceived)
+            ? $configured
+            : [...$configured, new ResultReceived($response->text, $response->usage)];
+
+        foreach ($events as $event) {
+            $onProgress($event);
+        }
     }
 
     private function responseFor(Task $task): TaskResponse

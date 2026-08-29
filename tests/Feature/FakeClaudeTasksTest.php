@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Process;
 use Phattarachai\ClaudeTasksLaravel\Facades\ClaudeTasks;
+use Phattarachai\ClaudeTasksLaravel\Streaming\AssistantText;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ToolUseStarted;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\AnalyzeStatementTask;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\ToolTask;
 
@@ -58,4 +62,52 @@ it('asserts nothing ran', function (): void {
     ClaudeTasks::fake();
 
     ClaudeTasks::assertNothingRan();
+});
+
+it('replays a faked progress sequence and closes it with the result', function (): void {
+    ClaudeTasks::fake([ToolTask::class => ['ok' => true]])->withProgress(ToolTask::class, [
+        new AssistantText('เจอ Tax ID'),
+        new ToolUseStarted('mcp__laravel-boost__database-query', 'select * from partners'),
+    ]);
+    Process::fake();
+
+    $seen = [];
+
+    $response = ToolTask::make()
+        ->onProgress(function (ProgressEvent $event) use (&$seen): void {
+            $seen[] = $event;
+        })
+        ->run();
+
+    expect($seen)->toHaveCount(3)
+        ->and($seen[0]->text)->toBe('เจอ Tax ID')
+        ->and($seen[1]->name)->toBe('mcp__laravel-boost__database-query')
+        ->and($seen[2])->toBeInstanceOf(ResultReceived::class)
+        ->and($seen[2]->text)->toBe($response->text)
+        ->and($response->output)->toBe(['ok' => true]);
+
+    ClaudeTasks::assertRan(ToolTask::class);
+    Process::assertNothingRan();
+});
+
+it('takes the constructor shorthand and honours a caller-supplied result event', function (): void {
+    ClaudeTasks::fake(
+        [ToolTask::class => ['ok' => true]],
+        [ToolTask::class => [new ResultReceived('{"ok":true}')]],
+    );
+
+    $seen = [];
+
+    ToolTask::make()->onProgress(function (ProgressEvent $event) use (&$seen): void {
+        $seen[] = $event;
+    })->run();
+
+    expect($seen)->toHaveCount(1)
+        ->and($seen[0])->toBeInstanceOf(ResultReceived::class);
+});
+
+it('skips the progress replay entirely when no listener is attached', function (): void {
+    ClaudeTasks::fake()->withProgress(ToolTask::class, [new AssistantText('never seen')]);
+
+    expect(ToolTask::make()->run()->output)->toHaveKey('ok');
 });

@@ -124,6 +124,49 @@ this machine), `InvalidTaskOutput` (`->errors`, `->rawOutput`).
 
 Events fire around every run: `TaskStarting`, `TaskCompleted`, `TaskFailed`.
 
+## Watch it think (streaming)
+
+Attach a progress listener and the run switches to the CLI's event stream
+(`--output-format stream-json --verbose`) — same process, read line by line, events delivered **as they arrive**
+instead of after exit. Nothing else changes: the closing result is still validated against `schema()`, failures still
+throw the same typed exceptions, and the `#[Timeout]` still bounds the whole run.
+
+```php
+use Phattarachai\ClaudeTasksLaravel\Streaming\AssistantText;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
+use Phattarachai\ClaudeTasksLaravel\Streaming\RunStarted;
+use Phattarachai\ClaudeTasksLaravel\Streaming\ToolUseStarted;
+
+$response = ReadInvoice::make($file)
+    ->onProgress(fn (ProgressEvent $event) => match (true) {
+        $event instanceof AssistantText => $run->reportProgress($event->text),
+        $event instanceof ToolUseStarted => $run->reportProgress("{$event->name} — {$event->summary}"),
+        default => null,
+    })
+    ->run();
+
+$response->output;   // unchanged: schema-validated array
+```
+
+| Event | Carries |
+|---|---|
+| `RunStarted` | `sessionId`, `model`, `tools` — the CLI's `system`/`init` line, once |
+| `AssistantText` | `text` — one trimmed text block per turn |
+| `ToolUseStarted` | `name`, `summary` (the telling argument, truncated to 120 chars), `input` |
+| `ResultReceived` | `text`, `usage`, `isError` — always last |
+
+Every event also carries `->raw`, the undecoded line, for anything the typed shape leaves out. Tool *results* are
+never surfaced: the feed says "reading invoice.jpg", never the file body. Unknown line types are skipped rather than
+thrown on, so a newer CLI cannot break a run.
+
+Sync JSON stays the default — a Task with no listener behaves exactly as it did in v0.1. Ask the model to narrate its
+steps in `instructions()` if you want the text blocks to read like an activity feed.
+
+`onProgress()` returns a `PendingRun`, not the Task, so the Task itself stays queue-serializable (a Closure is not).
+There is deliberately no `queue()` on it — a listener only makes sense in the process that is watching, so queue a job
+of your own and call `->onProgress(…)->run()` inside it.
+
 ## task-runs integration
 
 When [`phattarachai/task-runs-laravel`](https://github.com/phattarachai/task-runs-laravel) is installed, every Claude
@@ -145,6 +188,16 @@ ClaudeTasks::assertNothingRan();
 
 The fake never touches the CLI, and its generated output passes the Task's own schema.
 
+Fake a progress sequence to test your listener — the replay closes with a `ResultReceived` carrying the fake output,
+the way a real stream ends, unless your sequence already provides one:
+
+```php
+ClaudeTasks::fake()->withProgress(CategorizeStatement::class, [
+    new AssistantText('เจอ Tax ID 0105558…'),
+    new ToolUseStarted('mcp__laravel-boost__database-query', 'select * from partners'),
+]);
+```
+
 ## Health
 
 `php artisan claude-tasks:doctor` reports the resolved binary, its version, the OAuth credentials file, token expiry,
@@ -163,7 +216,8 @@ php artisan claude-tasks:doctor --probe
 
 ## Not in v1
 
-No chat mode, no streaming, no tool-result plumbing back into your app. One prompt in, one validated JSON object out.
+No chat mode, no interactive sessions, no tool-result plumbing back into your app. One prompt in, one validated JSON
+object out — with an optional read-only view of the work in between.
 
 ## License
 

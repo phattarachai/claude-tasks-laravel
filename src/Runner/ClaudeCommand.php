@@ -10,6 +10,8 @@ use Phattarachai\ClaudeTasksLaravel\Support\TaskOptions;
  * The argv for one headless run. `env -u` strips the nested-session guards
  * (belt) on top of the Process-level env removal (braces); --model appears only
  * when pinned by config or attribute; tools only when the Task declared them.
+ * `$streaming` swaps the single JSON envelope for the newline-delimited event
+ * stream (which the CLI only emits together with `--verbose`).
  */
 final readonly class ClaudeCommand
 {
@@ -18,13 +20,13 @@ final readonly class ClaudeCommand
      */
     private function __construct(public array $argv) {}
 
-    public static function build(string $binary, string $prompt, TaskOptions $options, ?string $mcpConfigPath): self
+    public static function build(string $binary, string $prompt, TaskOptions $options, ?string $mcpConfigPath, bool $streaming = false): self
     {
         $argv = [
             'env', '-u', 'CLAUDECODE', '-u', 'AI_AGENT',
             $binary,
             '-p', $prompt,
-            '--output-format', 'json',
+            ...($streaming ? ['--output-format', 'stream-json', '--verbose'] : ['--output-format', 'json']),
             '--max-turns', (string) $options->maxTurns,
         ];
 
