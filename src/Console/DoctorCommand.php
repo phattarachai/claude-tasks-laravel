@@ -8,20 +8,41 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeAuth;
 use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeBinary;
+use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeProbe;
 use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Input\InputOption;
 
 #[AsCommand(name: 'claude-tasks:doctor', description: 'Check the Claude Code binary, version, and OAuth credential health')]
 class DoctorCommand extends Command
 {
-    public function handle(ClaudeBinary $binary, ClaudeAuth $auth): int
+    /**
+     * The Keychain service name the Claude Code CLI prefers over the credentials file on macOS.
+     */
+    private const string KEYCHAIN_SERVICE = 'Claude Code-credentials';
+
+    public function handle(ClaudeBinary $binary, ClaudeAuth $auth, ClaudeProbe $probe): int
     {
         $binaryHealthy = $this->checkBinary($binary);
         $authHealthy = $this->checkAuth($auth);
 
+        $this->warnWhenKeychainCanDiverge();
+
+        $probeHealthy = $binaryHealthy ? $this->checkProbe($probe) : false;
+
         $this->line('');
         $this->components->twoColumnDetail('Pinned model', (string) config('claude-tasks.model'));
 
-        return $binaryHealthy && $authHealthy ? self::SUCCESS : self::FAILURE;
+        return $binaryHealthy && $authHealthy && $probeHealthy ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * @return list<array{0: string, 1: null, 2: int, 3: string}>
+     */
+    protected function getOptions(): array
+    {
+        return [
+            ['probe', null, InputOption::VALUE_NONE, 'Run a real one-turn headless call through the same path queued tasks use'],
+        ];
     }
 
     private function checkBinary(ClaudeBinary $binary): bool
@@ -70,5 +91,55 @@ class DoctorCommand extends Command
         }
 
         return true;
+    }
+
+    /**
+     * The CLI prefers the Keychain item over the credentials file, but launchd/GUI
+     * and ssh contexts can resolve different keychains — so the file this command
+     * inspects may not be the token queued workers actually authenticate with.
+     */
+    private function warnWhenKeychainCanDiverge(): void
+    {
+        if (PHP_OS_FAMILY !== 'Darwin') {
+            return;
+        }
+
+        $result = Process::timeout(10)->run(['security', 'find-generic-password', '-s', self::KEYCHAIN_SERVICE]);
+
+        if ($result->failed()) {
+            return;
+        }
+
+        $this->components->twoColumnDetail('Keychain item', '"'.self::KEYCHAIN_SERVICE.'" present in the login keychain');
+        $this->components->warn(
+            'The Claude CLI prefers this Keychain item over the credentials file, but GUI/launchd processes '
+            .'(Horizon started from the desktop) and ssh sessions can read different copies — a fresh file does not '
+            .'guarantee workers authenticate. Run with --probe to verify the path workers actually use.',
+        );
+    }
+
+    private function checkProbe(ClaudeProbe $probe): bool
+    {
+        if (! $this->option('probe')) {
+            $this->components->twoColumnDetail('Live probe', 'skipped — pass --probe for a real one-turn call');
+
+            return true;
+        }
+
+        $result = $probe->run();
+
+        if ($result->passed) {
+            $this->components->twoColumnDetail('Live probe', 'passed — '.$result->detail);
+
+            return true;
+        }
+
+        $this->components->error(sprintf(
+            'Live probe failed (%s): %s',
+            $result->authFailure ? 'authentication — run `claude` then /login in the context workers run from' : 'process',
+            $result->detail,
+        ));
+
+        return false;
     }
 }

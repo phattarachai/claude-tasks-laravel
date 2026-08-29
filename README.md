@@ -34,7 +34,7 @@ JSON** back, with cost / turns / duration / session id attached. The API deliber
 ```bash
 composer require phattarachai/claude-tasks-laravel
 php artisan vendor:publish --tag=claude-tasks-config   # optional
-php artisan claude-tasks:doctor                        # binary found? version? OAuth healthy?
+php artisan claude-tasks:doctor                        # binary found? version? OAuth healthy? add --probe for a real call
 ```
 
 The machine running the app (or its queue workers) needs a logged-in Claude Code (`claude` then `/login`).
@@ -149,6 +149,17 @@ The fake never touches the CLI, and its generated output passes the Task's own s
 
 `php artisan claude-tasks:doctor` reports the resolved binary, its version, the OAuth credentials file, token expiry,
 and whether a refresh token is present — exit code 1 when a scheduled run would die on auth.
+
+Those are metadata checks, and metadata can lie: on macOS the CLI prefers a `Claude Code-credentials` Keychain item
+over the credentials file, and GUI/launchd processes (Horizon started from the desktop) can read a different copy than
+ssh sessions do — a stale Keychain token fails workers while the file still looks healthy. The doctor warns when that
+Keychain item exists (metadata only, via `security find-generic-password`; it never reads the secret), and
+`--probe` runs a real one-turn headless call through the same `ClaudeCommand` path queued tasks use, reporting
+pass/fail with the failure classified as authentication or process:
+
+```bash
+php artisan claude-tasks:doctor --probe
+```
 
 ## Not in v1
 
