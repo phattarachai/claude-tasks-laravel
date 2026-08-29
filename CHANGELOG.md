@@ -7,7 +7,7 @@ Release notes are drafted automatically from merged pull requests and published 
 
 This file records anything released before that automation landed.
 
-## v0.2.0 — unreleased
+## v0.2.0 — 2026-08-29
 
 **Opt-in streaming.** `SomeTask::make()->onProgress(fn (ProgressEvent $e) => …)->run()` runs the CLI with
 `--output-format stream-json --verbose` and delivers typed, immutable events as each line arrives: `RunStarted`,
