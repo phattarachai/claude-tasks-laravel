@@ -9,11 +9,15 @@ use Illuminate\Support\Collection;
 use Override;
 use Phattarachai\ClaudeTasksLaravel\ClaudeTasksManager;
 use Phattarachai\ClaudeTasksLaravel\Contracts\Task;
+use Phattarachai\ClaudeTasksLaravel\Contracts\UsesMcpServers;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
 use Phattarachai\ClaudeTasksLaravel\Responses\Data\Usage;
 use Phattarachai\ClaudeTasksLaravel\Responses\QueuedTaskResponse;
 use Phattarachai\ClaudeTasksLaravel\Responses\TaskResponse;
 use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
 use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
+use Phattarachai\ClaudeTasksLaravel\Support\RunManifest;
+use Phattarachai\ClaudeTasksLaravel\Support\TaskOptions;
 use PHPUnit\Framework\Assert as PHPUnit;
 
 class FakeClaudeTasksManager extends ClaudeTasksManager
@@ -29,7 +33,7 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
     protected array $queued = [];
 
     /**
-     * @param  array<class-string<Task>, array<string, mixed>|Closure>  $outputs
+     * @param  array<class-string<Task>, array<string, mixed>|string|Closure>  $outputs  a string cans a Format::Text reply
      * @param  array<class-string<Task>, list<ProgressEvent>>  $progress
      */
     public function __construct(protected array $outputs = [], protected array $progress = []) {}
@@ -133,11 +137,34 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
     {
         $canned = $this->outputs[$task::class] ?? null;
 
-        /** @var array<string, mixed> $output */
-        $output = $canned instanceof Closure
-            ? $canned($task)
-            : ($canned ?? FakeOutput::forTask($task));
+        $resolved = $canned instanceof Closure ? $canned($task) : $canned;
+        $manifest = $this->fakeManifest($task);
 
-        return new TaskResponse($output, new Usage, (string) json_encode($output));
+        if (Format::for($task) === Format::Text) {
+            $text = is_string($resolved) ? $resolved : FakeOutput::textFor($task);
+
+            return new TaskResponse([], new Usage, $text, $text, $manifest);
+        }
+
+        /** @var array<string, mixed> $output */
+        $output = $resolved ?? FakeOutput::forTask($task);
+
+        return new TaskResponse($output, new Usage, (string) json_encode($output), '', $manifest);
+    }
+
+    private function fakeManifest(Task $task): RunManifest
+    {
+        $options = TaskOptions::resolve($task);
+
+        return new RunManifest(
+            prompt: '[faked prompt]',
+            requestedModel: $options->model,
+            timeout: $options->timeout,
+            maxTurns: $options->maxTurns,
+            allowedTools: $options->allowedTools,
+            mcpServers: $task instanceof UsesMcpServers ? array_keys($task->mcpServers()) : [],
+            outputFormat: 'json',
+            responseFormat: $options->responseFormat,
+        );
     }
 }

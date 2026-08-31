@@ -7,6 +7,7 @@ namespace Phattarachai\ClaudeTasksLaravel\Responses;
 use ArrayAccess;
 use LogicException;
 use Phattarachai\ClaudeTasksLaravel\Responses\Data\Usage;
+use Phattarachai\ClaudeTasksLaravel\Support\RunManifest;
 
 /**
  * @implements ArrayAccess<string, mixed>
@@ -15,11 +16,16 @@ final readonly class TaskResponse implements ArrayAccess
 {
     /**
      * @param  array<string, mixed>  $output  schema-validated data — the caller writes the DB with it
+     * @param  string  $text  the model's raw final message, verbatim (prose + JSON, before any split)
+     * @param  string  $narration  the prose the model wrote around the JSON, object removed — a human explanation of the output
+     * @param  RunManifest|null  $request  what defined the call: the composed prompt + resolved parameters
      */
     public function __construct(
         public array $output,
         public Usage $usage,
         public string $text,
+        public string $narration = '',
+        public ?RunManifest $request = null,
     ) {}
 
     public function json(?string $key = null, mixed $default = null): mixed

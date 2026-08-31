@@ -28,7 +28,7 @@ use Phattarachai\ClaudeTasksLaravel\Testing\FakeClaudeTasksManager;
 class ClaudeTasks extends Facade
 {
     /**
-     * @param  array<class-string<Task>, array<string, mixed>|Closure>  $outputs
+     * @param  array<class-string<Task>, array<string, mixed>|string|Closure>  $outputs  a string cans a Format::Text reply
      * @param  array<class-string<Task>, list<ProgressEvent>>  $progress
      */
     public static function fake(array $outputs = [], array $progress = []): FakeClaudeTasksManager

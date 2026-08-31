@@ -6,6 +6,7 @@ namespace Phattarachai\ClaudeTasksLaravel\Testing;
 
 use Illuminate\Support\Str;
 use Phattarachai\ClaudeTasksLaravel\Contracts\Task;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
 use Phattarachai\ClaudeTasksLaravel\Prompt\TaskSchema;
 
 /**
@@ -23,6 +24,15 @@ class FakeOutput
         $output = self::forSchema(TaskSchema::serialize($task));
 
         return $output;
+    }
+
+    /**
+     * Stand-in prose for a faked {@see Format::Text}
+     * task — enough to read as a real answer without a canned response per test.
+     */
+    public static function textFor(Task $task): string
+    {
+        return (string) $task->instructions().' — '.Str::random(24);
     }
 
     /**

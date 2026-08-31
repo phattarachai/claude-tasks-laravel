@@ -10,6 +10,7 @@ use Phattarachai\ClaudeTasksLaravel\Attributes\Model;
 use Phattarachai\ClaudeTasksLaravel\Attributes\Timeout;
 use Phattarachai\ClaudeTasksLaravel\Contracts\HasAttachments;
 use Phattarachai\ClaudeTasksLaravel\Contracts\Task;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
 use ReflectionClass;
 
 /**
@@ -26,6 +27,7 @@ final readonly class TaskOptions
         public int $timeout,
         public int $maxTurns,
         public array $allowedTools,
+        public Format $responseFormat,
     ) {}
 
     public static function resolve(Task $task): self
@@ -35,6 +37,7 @@ final readonly class TaskOptions
             timeout: self::attribute($task, Timeout::class)->value ?? (int) config('claude-tasks.timeout'),
             maxTurns: self::attribute($task, MaxTurns::class)->value ?? (int) config('claude-tasks.max_turns'),
             allowedTools: self::allowedToolsFor($task),
+            responseFormat: Format::for($task),
         );
     }
 

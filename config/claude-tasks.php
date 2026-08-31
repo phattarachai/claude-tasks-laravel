@@ -36,4 +36,8 @@ return [
         // Record every run as a task_runs row when phattarachai/task-runs-laravel is installed.
         'enabled' => true,
     ],
+
+    // Store the composed prompt in the run's request payload. Off logs the parameters but not the
+    // prompt text — set false where the prompt embeds data you would rather not persist.
+    'log_prompt' => (bool) env('CLAUDE_TASKS_LOG_PROMPT', true),
 ];

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Phattarachai\ClaudeTasksLaravel\Runner;
 
 use Illuminate\Support\Facades\Process;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
 use Phattarachai\ClaudeTasksLaravel\Exceptions\ClaudeProcessFailed;
 use Phattarachai\ClaudeTasksLaravel\Support\TaskOptions;
 
@@ -31,6 +32,7 @@ class ClaudeProbe
             timeout: (int) config('claude-tasks.timeout'),
             maxTurns: 1,
             allowedTools: [],
+            responseFormat: Format::Json,
         );
 
         $command = ClaudeCommand::build($this->binary->path(), self::PROMPT, $options, null);

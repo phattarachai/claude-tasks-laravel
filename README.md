@@ -26,8 +26,10 @@ JSON** back, with cost / turns / duration / session id attached. The API deliber
   Read tool — nothing else.
 - **The model follows the CLI's default** unless pinned — `CLAUDE_TASKS_MODEL` / `claude-tasks.model` or a Task's `#[Model]` adds `--model`; `--max-turns` is always capped.
 - **Failures throw typed exceptions** — error text is never returned as a result.
-- Output that is not JSON, or JSON that misses the declared schema, throws `InvalidTaskOutput` with the validation
-  errors and the raw output attached.
+- JSON output is recovered even when the model narrates before it — the last balanced `{…}` object is carved out of
+  any leading prose. Output with no JSON object at all, or JSON that misses the declared schema, throws
+  `InvalidTaskOutput` with the validation errors and the raw output attached. Tasks can also opt out of JSON entirely
+  with `#[ResponseFormat(Format::Text)]` (below).
 
 ## Install
 
@@ -91,6 +93,37 @@ class AuditLedger implements Task { /* … */ }
 ```
 
 Anything not declared falls back to `config/claude-tasks.php` (`model`, `timeout`, `max_turns`).
+
+### Text responses
+
+Not every task returns data. Pin `#[ResponseFormat(Format::Text)]` for a task whose deliverable is Markdown or plain
+prose — the schema gate is skipped, the prompt asks for the answer alone, and the reply comes back verbatim on
+`$response->text` (only surrounding whitespace trimmed; `$response->output` is `[]`). The task declares no schema.
+
+```php
+use Phattarachai\ClaudeTasksLaravel\Attributes\ResponseFormat;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
+
+#[ResponseFormat(Format::Text)]
+class SummarizeMonth implements HasContext, Task
+{
+    use Runnable;
+
+    public function instructions(): string
+    {
+        return 'Write a short Markdown summary of the month.';
+    }
+
+    public function schema(JsonSchema $schema): array
+    {
+        return [];
+    }
+}
+
+$summary = SummarizeMonth::make($month)->run()->text;   // Markdown prose
+```
+
+The default is `Format::Json` — omit the attribute and the declared `schema()` is enforced as before.
 
 ### Optional capabilities
 

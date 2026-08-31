@@ -21,6 +21,14 @@ class InvalidTaskOutput extends ClaudeTasksException
         return $exception;
     }
 
+    public static function emptyText(string $rawOutput): self
+    {
+        $exception = new self('Claude returned an empty text response.');
+        $exception->rawOutput = $rawOutput;
+
+        return $exception;
+    }
+
     /**
      * @param  array<string, list<string>>  $errors
      */

@@ -8,11 +8,13 @@ use Illuminate\Pipeline\Pipeline;
 use Phattarachai\ClaudeTasksLaravel\Contracts\HasAttachments;
 use Phattarachai\ClaudeTasksLaravel\Contracts\HasContext;
 use Phattarachai\ClaudeTasksLaravel\Contracts\Task;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
 
 /**
  * Assembles the single -p prompt: instructions, labeled context sections
  * (piped through claude-tasks.context.pipes), attachment references, and the
- * JSON output contract derived from the Task's schema.
+ * output contract — the JSON schema derived from the Task, or a prose contract
+ * when the Task pins {@see Format::Text}.
  */
 class PromptComposer
 {
@@ -62,6 +64,16 @@ class PromptComposer
 
     private function outputContract(Task $task): string
     {
+        if (Format::for($task) === Format::Text) {
+            return <<<'PROMPT'
+                ## Output requirements
+
+                Respond with the answer itself and nothing else — no preamble like "Here is",
+                no JSON, no wrapping code fence around the whole reply. Markdown formatting
+                inside the answer is welcome.
+                PROMPT;
+        }
+
         $schema = json_encode(TaskSchema::serialize($task), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
         return <<<PROMPT

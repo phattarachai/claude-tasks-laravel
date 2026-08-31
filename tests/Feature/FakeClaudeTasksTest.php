@@ -9,6 +9,7 @@ use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
 use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
 use Phattarachai\ClaudeTasksLaravel\Streaming\ToolUseStarted;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\AnalyzeStatementTask;
+use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\SummarizeMonthTask;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\ToolTask;
 
 it('returns schema-derived fake output without touching the CLI', function (): void {
@@ -37,6 +38,27 @@ it('resolves closure outputs with the task instance', function (): void {
     ]);
 
     expect(ClaudeTasks::run(new AnalyzeStatementTask('2026-03'))->output)->toBe(['month' => '2026-03']);
+});
+
+it('fakes a Format::Text task with generated prose and empty output', function (): void {
+    ClaudeTasks::fake();
+    Process::fake();
+
+    $response = ClaudeTasks::run(new SummarizeMonthTask);
+
+    expect($response->text)->not->toBe('')
+        ->and($response->text)->not->toBe('[]')
+        ->and($response->output)->toBe([]);
+
+    Process::assertNothingRan();
+});
+
+it('cans a Format::Text reply with a plain string', function (): void {
+    ClaudeTasks::fake([
+        SummarizeMonthTask::class => '# มีนาคม 2026\n\nสรุปสั้น ๆ',
+    ]);
+
+    expect(ClaudeTasks::run(new SummarizeMonthTask)->text)->toBe('# มีนาคม 2026\n\nสรุปสั้น ๆ');
 });
 
 it('asserts ran with an optional truth test', function (): void {

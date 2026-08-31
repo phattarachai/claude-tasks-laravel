@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Process;
+use Phattarachai\ClaudeTasksLaravel\Enums\Format;
 use Phattarachai\ClaudeTasksLaravel\Events\TaskCompleted;
 use Phattarachai\ClaudeTasksLaravel\Events\TaskFailed;
 use Phattarachai\ClaudeTasksLaravel\Events\TaskStarting;
@@ -15,6 +16,7 @@ use Phattarachai\ClaudeTasksLaravel\Facades\ClaudeTasks;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\AnalyzeStatementTask;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\AttachmentTask;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\McpTask;
+use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\SummarizeMonthTask;
 use Phattarachai\ClaudeTasksLaravel\Tests\Fixtures\ToolTask;
 
 it('runs a task and returns schema-validated output with usage', function (): void {
@@ -155,6 +157,99 @@ it('throws InvalidTaskOutput when the result is not JSON', function (): void {
     Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => 'Here is my analysis in prose.']))]);
 
     ClaudeTasks::run(new AnalyzeStatementTask);
+})->throws(InvalidTaskOutput::class);
+
+it('digs the JSON object out of narration that leaked in before it', function (): void {
+    $narrated = "อ่านใบกำกับ: สรุปแล้วได้ผลดังนี้\n".json_encode(validStatementOutput());
+
+    Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => $narrated]))]);
+
+    expect(ClaudeTasks::run(new AnalyzeStatementTask)->output)->toBe(validStatementOutput());
+});
+
+it('keeps the last balanced object when prose brackets precede it', function (): void {
+    $narrated = "I considered {a: 1} as a guess, then settled on:\n".json_encode(validStatementOutput());
+
+    Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => $narrated]))]);
+
+    expect(ClaudeTasks::run(new AnalyzeStatementTask)->output)->toBe(validStatementOutput());
+});
+
+it('splits narration from the JSON object into ->narration, leaving ->text raw', function (): void {
+    $prose = 'อ่านใบกำกับ: ยอด 1,536.00 = ฐาน 1,435.51 + VAT 100.49 ✓';
+    $raw = $prose."\n".json_encode(validStatementOutput());
+
+    Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => $raw]))]);
+
+    $response = ClaudeTasks::run(new AnalyzeStatementTask);
+
+    expect($response->output)->toBe(validStatementOutput())
+        ->and($response->narration)->toBe($prose)
+        ->and($response->text)->toBe($raw);
+});
+
+it('leaves ->narration empty when the model returns a bare object', function (): void {
+    Process::fake(['*' => Process::result(claudeEnvelope(validStatementOutput()))]);
+
+    expect(ClaudeTasks::run(new AnalyzeStatementTask)->narration)->toBe('');
+});
+
+it('exposes the run manifest — requested model + resolved parameters — on the response', function (): void {
+    config()->set('claude-tasks.model', 'claude-opus-5');
+    Process::fake(['*' => Process::result(claudeEnvelope(validStatementOutput()))]);
+
+    $manifest = ClaudeTasks::run(new AnalyzeStatementTask)->request;
+
+    expect($manifest->requestedModel)->toBe('claude-opus-5')
+        ->and($manifest->outputFormat)->toBe('json')
+        ->and($manifest->responseFormat)->toBe(Format::Json)
+        ->and($manifest->prompt)->toContain('Categorize the bank statement');
+});
+
+it('captures the actual model, session id and tools from the stream init line', function (): void {
+    Process::fake(['*' => Process::result(implode("\n", streamLines()))]);
+
+    $manifest = AnalyzeStatementTask::make()
+        ->onProgress(fn () => null)
+        ->run()
+        ->request;
+
+    expect($manifest->outputFormat)->toBe('stream-json')
+        ->and($manifest->actualModel)->toBe('claude-opus-5')
+        ->and($manifest->sessionId)->toBe('sess-0123')
+        ->and($manifest->actualTools)->toBe(['Read']);
+});
+
+it('returns prose verbatim for a Format::Text task and skips the schema gate', function (): void {
+    $prose = "# กรกฎาคม 2026\n\nรายรับรวม 50,000 บาท รายจ่าย 1,536 บาท";
+
+    Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => "  {$prose}  "]))]);
+
+    $response = ClaudeTasks::run(new SummarizeMonthTask);
+
+    expect($response->narration)->toBe($prose)
+        ->and($response->text)->toBe("  {$prose}  ")
+        ->and($response->output)->toBe([]);
+});
+
+it('does not embed a JSON schema in the prompt for a Format::Text task', function (): void {
+    Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => 'A summary.']))]);
+
+    ClaudeTasks::run(new SummarizeMonthTask);
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $prompt = $process->command[7] ?? '';
+
+        return is_string($prompt)
+            && ! str_contains($prompt, 'JSON schema')
+            && str_contains($prompt, 'Respond with the answer itself');
+    });
+});
+
+it('throws InvalidTaskOutput when a Format::Text task returns nothing', function (): void {
+    Process::fake(['*' => Process::result(claudeEnvelope([], ['result' => '   ']))]);
+
+    ClaudeTasks::run(new SummarizeMonthTask);
 })->throws(InvalidTaskOutput::class);
 
 it('dispatches TaskStarting and TaskCompleted on success', function (): void {
