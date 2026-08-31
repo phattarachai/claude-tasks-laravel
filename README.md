@@ -142,7 +142,18 @@ $response->output;                    // schema-validated array — write your D
 $response['lines'];                   // ArrayAccess into the output
 $response->json('lines.0.category');  // dot access
 $response->usage->costUsd;            // plus numTurns / durationMs / sessionId
+$response->narration;                 // prose the model wrote around the JSON (object removed), '' if none
+$response->text;                      // the raw final message, unchanged
+$response->request;                   // RunManifest — what was actually sent (below)
 ```
+
+`output` and `narration` are the two halves of the final message: when the model narrates around its answer, the last
+balanced `{…}` object is validated into `output` and the surrounding prose is handed back on `narration` (empty when
+the message was pure JSON). `text` stays the untouched raw message.
+
+`request` is a **`RunManifest`** — the composed prompt and the resolved call parameters: the requested model and the
+**actual** model / session id / tools captured from the stream's `system`/`init` line, plus max-turns, timeout, allowed
+tools, MCP servers, and the output-format / response-format. `->toArray()` gives you the loggable shape.
 
 Or queue it with the `laravel/ai`-style callbacks (tries / backoff / queue from config):
 
@@ -205,6 +216,11 @@ of your own and call `->onProgress(…)->run()` inside it.
 When [`phattarachai/task-runs-laravel`](https://github.com/phattarachai/task-runs-laravel) is installed, every Claude
 run records one `task_runs` row — type from the Task class, cost / turns / model / session id in `options` — so runs
 show up in the same in-app task screen as your other background work. Toggle with `claude-tasks.task_runs.enabled`.
+
+With task-runs ≥ v0.3, `TaskRunRecorder` also persists the run's `RunManifest` into the row's `request` column — the
+composed prompt and every resolved parameter, so a run is reproducible and a pre-return failure still logs what it
+tried. `claude-tasks.log_prompt` (default `true`) gates storing the prompt text; turn it off to keep the parameters
+without the prompt body.
 
 ## Testing your app
 
