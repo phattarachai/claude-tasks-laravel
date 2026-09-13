@@ -54,7 +54,7 @@ class SchemaRules
         [$type, $nullable] = self::typeOf($property);
 
         $rules[$path] = [
-            ...self::presenceRules($required, $nullable),
+            ...self::presenceRules($required, $nullable, $type),
             ...self::typeRules($type),
             ...self::constraintRules($property),
         ];
@@ -86,11 +86,13 @@ class SchemaRules
     /**
      * @return list<string>
      */
-    private static function presenceRules(bool $required, bool $nullable): array
+    private static function presenceRules(bool $required, bool $nullable, ?string $type): array
     {
+        $requiredRule = in_array($type, ['array', 'object'], true) ? 'present' : 'required';
+
         return match (true) {
             $required && $nullable => ['present', 'nullable'],
-            $required => ['required'],
+            $required => [$requiredRule],
             $nullable => ['sometimes', 'nullable'],
             default => ['sometimes'],
         };

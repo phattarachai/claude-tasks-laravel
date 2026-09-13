@@ -7,6 +7,14 @@ Release notes are drafted automatically from merged pull requests and published 
 
 This file records anything released before that automation landed.
 
+## v0.3.1 — 2026-09-13
+
+- **Fix:** required array/object schema fields no longer reject an empty value. `SchemaRules` now emits
+  Laravel `present` (the key must exist, but may be empty) instead of `required` (must exist and be
+  non-empty) for a required `array` or `object` property, so a schema-valid response ending in an empty
+  required array — e.g. `"warnings": []` — passes validation. Required scalars still emit `required`, and
+  array-item schemas are still enforced by the existing recursion.
+
 ## v0.3.0 — 2026-08-31
 
 **Split the answer, log the call.** A model that narrates around its JSON no longer loses the read, the
