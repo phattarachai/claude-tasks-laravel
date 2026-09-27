@@ -23,6 +23,7 @@ class ClaudeProbe
         private readonly ClaudeBinary $binary,
         private readonly ClaudeAuth $auth,
         private readonly ResponseParser $parser,
+        private readonly ClaudeEnvironment $environment,
     ) {}
 
     public function run(): ClaudeProbeResult
@@ -39,7 +40,7 @@ class ClaudeProbe
 
         $result = Process::path(base_path())
             ->timeout($options->timeout)
-            ->env(['CLAUDECODE' => false, 'AI_AGENT' => false])
+            ->env($this->environment->variables())
             ->run($command->argv);
 
         if ($result->failed()) {

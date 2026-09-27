@@ -57,3 +57,44 @@ function validStatementOutput(): array
         ],
     ];
 }
+
+function probeEnvelope(string $result = 'ok'): string
+{
+    return (string) json_encode([
+        'type' => 'result',
+        'subtype' => 'success',
+        'is_error' => false,
+        'result' => $result,
+    ]);
+}
+
+/**
+ * Point `claude-tasks.token_path` at a fresh temp dir, write `$contents` there when given
+ * (an array is JSON-encoded, a string written verbatim), and return the path.
+ *
+ * @param  array<string, mixed>|string|null  $contents
+ */
+function useTokenFile(array|string|null $contents = null): string
+{
+    $path = sys_get_temp_dir().'/claude-tasks-'.bin2hex(random_bytes(6)).'/token.json';
+
+    config()->set('claude-tasks.token_path', $path);
+
+    if ($contents === null) {
+        return $path;
+    }
+
+    mkdir(dirname($path), 0700, true);
+    file_put_contents($path, is_array($contents) ? (string) json_encode($contents) : $contents);
+
+    return $path;
+}
+
+function useValidToken(int $expiresInDays = 200): string
+{
+    return useTokenFile([
+        'token' => 'sk-ant-oat01-secret-abcd',
+        'issued_at' => now()->subDays(10)->toIso8601String(),
+        'expires_at' => now()->addDays($expiresInDays)->toIso8601String(),
+    ]);
+}

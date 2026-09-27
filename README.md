@@ -39,7 +39,8 @@ php artisan vendor:publish --tag=claude-tasks-config   # optional
 php artisan claude-tasks:doctor                        # binary found? version? OAuth healthy? add --probe for a real call
 ```
 
-The machine running the app (or its queue workers) needs a logged-in Claude Code (`claude` then `/login`).
+The machine running the app (or its queue workers) needs a logged-in Claude Code (`claude` then `/login`) — or, for a
+headless box, one long-lived token (see [One token for headless machines](#one-token-for-headless-machines)).
 
 ## Declare a Task
 
@@ -262,6 +263,37 @@ pass/fail with the failure classified as authentication or process:
 ```bash
 php artisan claude-tasks:doctor --probe
 ```
+
+With a stored token (below) the doctor adds a **Token** block — path, expiry, days left — fails on an expired token,
+and treats the credentials file and Keychain item as informational only. `php artisan claude-tasks:token --status`
+prints just the token's status and exits 1 when it is missing or expired — cheap enough for a scheduled check.
+
+## One token for headless machines
+
+On macOS the Claude CLI keeps its login in two places: the Keychain (read by GUI/launchd processes — Horizon started
+by launchd) and `~/.claude/.credentials.json` (read by ssh sessions and cron). Each copy refreshes its OAuth token
+independently, and a refresh through one invalidates the refresh token the other holds — so queued runs die with
+`ClaudeAuthExpired` while `claude` in your ssh session works fine.
+
+The fix is one long-lived OAuth token per machine that every run uses, whichever context spawned it:
+
+```bash
+claude setup-token                        # prints a ~1-year token (sk-ant-oat…)
+php artisan claude-tasks:token            # paste it at the hidden prompt; stores it, then runs a live probe
+```
+
+The token is written to `~/.config/claude-tasks/token.json` (mode `0600`, directory `0700`; override the location with
+`CLAUDE_TASKS_TOKEN_PATH` / `claude-tasks.token_path`) together with its expiry, and every `claude` process the
+package spawns — sync, streaming, queued, and the doctor's probe — gets it as `CLAUDE_CODE_OAUTH_TOKEN` in its
+environment (never on the command line). An expired token is still passed on purpose, so it fails with a clear
+"run `claude setup-token`" error instead of silently falling back to whichever Keychain/file copy happens to be there.
+
+- `--stdin` reads the token from STDIN instead of the prompt: `pbpaste | php artisan claude-tasks:token --stdin`.
+- `--expires=YYYY-MM-DD` records a different expiry (the token itself is opaque; the default is one year from now).
+- `--no-probe` skips the live one-turn probe after storing.
+
+Rotate it yearly by running the same two commands again. No worker restart is needed: the file is read on every run,
+so the next job picks up the new token.
 
 ## Not in v1
 

@@ -9,6 +9,9 @@ return [
     // Claude Code OAuth credentials file, read by claude-tasks:doctor and auth-failure detection.
     'credentials_path' => env('CLAUDE_TASKS_CREDENTIALS_PATH', (getenv('HOME') ?: '').'/.claude/.credentials.json'),
 
+    // Long-lived `claude setup-token` token (stored by claude-tasks:token), passed to every run as CLAUDE_CODE_OAUTH_TOKEN.
+    'token_path' => env('CLAUDE_TASKS_TOKEN_PATH', (getenv('HOME') ?: '').'/.config/claude-tasks/token.json'),
+
     // Null follows the CLI's own default model; set to pin, or per Task via #[Model].
     'model' => env('CLAUDE_TASKS_MODEL'),
 

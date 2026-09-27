@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Process;
 use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeAuth;
 use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeBinary;
 use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeProbe;
+use Phattarachai\ClaudeTasksLaravel\Runner\ClaudeToken;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputOption;
 
@@ -20,19 +21,22 @@ class DoctorCommand extends Command
      */
     private const string KEYCHAIN_SERVICE = 'Claude Code-credentials';
 
-    public function handle(ClaudeBinary $binary, ClaudeAuth $auth, ClaudeProbe $probe): int
+    public function handle(ClaudeBinary $binary, ClaudeAuth $auth, ClaudeToken $token, ClaudeProbe $probe): int
     {
+        $tokenConfigured = $token->status()->present;
+
         $binaryHealthy = $this->checkBinary($binary);
-        $authHealthy = $this->checkAuth($auth);
+        $tokenHealthy = $this->checkToken($token);
+        $authHealthy = $tokenConfigured ? $this->describeAuth($auth) : $this->checkAuth($auth);
 
-        $this->warnWhenKeychainCanDiverge();
+        $this->warnWhenKeychainCanDiverge($tokenConfigured);
 
-        $probeHealthy = $binaryHealthy ? $this->checkProbe($probe) : false;
+        $probeHealthy = $binaryHealthy ? $this->checkProbe($probe, $tokenConfigured) : false;
 
         $this->line('');
         $this->components->twoColumnDetail('Pinned model', (string) config('claude-tasks.model'));
 
-        return $binaryHealthy && $authHealthy && $probeHealthy ? self::SUCCESS : self::FAILURE;
+        return $binaryHealthy && $tokenHealthy && $authHealthy && $probeHealthy ? self::SUCCESS : self::FAILURE;
     }
 
     /**
@@ -70,6 +74,54 @@ class DoctorCommand extends Command
         return $result->successful() ? trim($result->output()) : 'unknown ('.trim($result->errorOutput()).')';
     }
 
+    private function checkToken(ClaudeToken $token): bool
+    {
+        $status = $token->status();
+
+        if (! $status->present) {
+            $this->components->twoColumnDetail('Token', 'not configured');
+
+            return true;
+        }
+
+        $this->components->twoColumnDetail('Token', $token->path());
+        $this->components->twoColumnDetail('Token expires', $status->expiresAt?->toDateString() ?? 'unknown');
+
+        if ($status->isExpired()) {
+            $this->components->error('The Claude token has expired — run `claude setup-token` then `php artisan claude-tasks:token`.');
+
+            return false;
+        }
+
+        $this->components->twoColumnDetail('Token days left', (string) ($status->daysLeft() ?? 'unknown'));
+
+        if ($status->expiresWithin(30)) {
+            $this->components->warn('The Claude token expires within 30 days — rotate it with `claude setup-token` then `php artisan claude-tasks:token`.');
+        }
+
+        return true;
+    }
+
+    /**
+     * With a stored token every run authenticates through CLAUDE_CODE_OAUTH_TOKEN,
+     * so the CLI login is reported for information only and never fails the check.
+     */
+    private function describeAuth(ClaudeAuth $auth): bool
+    {
+        $status = $auth->status();
+
+        if (! $status->credentialsFound) {
+            $this->components->twoColumnDetail('Credentials', 'none — not needed, the token is used');
+
+            return true;
+        }
+
+        $this->components->twoColumnDetail('Credentials', $auth->credentialsPath().' (unused — the token is used)');
+        $this->components->twoColumnDetail('Login expires', $status->expiresAt?->toDateTimeString() ?? 'unknown');
+
+        return true;
+    }
+
     private function checkAuth(ClaudeAuth $auth): bool
     {
         $status = $auth->status();
@@ -98,7 +150,7 @@ class DoctorCommand extends Command
      * and ssh contexts can resolve different keychains — so the file this command
      * inspects may not be the token queued workers actually authenticate with.
      */
-    private function warnWhenKeychainCanDiverge(): void
+    private function warnWhenKeychainCanDiverge(bool $tokenConfigured): void
     {
         if (PHP_OS_FAMILY !== 'Darwin') {
             return;
@@ -110,6 +162,12 @@ class DoctorCommand extends Command
             return;
         }
 
+        if ($tokenConfigured) {
+            $this->components->twoColumnDetail('Keychain item', '"'.self::KEYCHAIN_SERVICE.'" present — ignored, the token overrides it');
+
+            return;
+        }
+
         $this->components->twoColumnDetail('Keychain item', '"'.self::KEYCHAIN_SERVICE.'" present in the login keychain');
         $this->components->warn(
             'The Claude CLI prefers this Keychain item over the credentials file, but GUI/launchd processes '
@@ -118,7 +176,7 @@ class DoctorCommand extends Command
         );
     }
 
-    private function checkProbe(ClaudeProbe $probe): bool
+    private function checkProbe(ClaudeProbe $probe, bool $tokenConfigured): bool
     {
         if (! $this->option('probe')) {
             $this->components->twoColumnDetail('Live probe', 'skipped — pass --probe for a real one-turn call');
@@ -136,10 +194,19 @@ class DoctorCommand extends Command
 
         $this->components->error(sprintf(
             'Live probe failed (%s): %s',
-            $result->authFailure ? 'authentication — run `claude` then /login in the context workers run from' : 'process',
+            $this->probeFailureKind($result->authFailure, $tokenConfigured),
             $result->detail,
         ));
 
         return false;
+    }
+
+    private function probeFailureKind(bool $authFailure, bool $tokenConfigured): string
+    {
+        return match (true) {
+            ! $authFailure => 'process',
+            $tokenConfigured => 'authentication — the token was rejected; run `claude setup-token` then `php artisan claude-tasks:token`',
+            default => 'authentication — run `claude` then /login in the context workers run from',
+        };
     }
 }

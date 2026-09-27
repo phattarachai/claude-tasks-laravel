@@ -47,6 +47,8 @@ class TaskRunner
         private readonly ResponseParser $parser,
         private readonly OutputValidator $validator,
         private readonly TaskRunRecorder $recorder,
+        private readonly ClaudeEnvironment $environment,
+        private readonly ClaudeToken $token,
     ) {}
 
     /**
@@ -198,7 +200,7 @@ class TaskRunner
     {
         return Process::path(base_path())
             ->timeout($options->timeout)
-            ->env(['CLAUDECODE' => false, 'AI_AGENT' => false]);
+            ->env($this->environment->variables());
     }
 
     private function command(TaskOptions $options, string $prompt, ?string $mcpConfigPath, bool $streaming = false): ClaudeCommand
@@ -219,8 +221,14 @@ class TaskRunner
 
     private function classifyFailure(string $output, ClaudeProcessFailed $fallback): ClaudeProcessFailed|ClaudeAuthExpired
     {
-        return $this->auth->looksLikeAuthFailure($output)
-            ? ClaudeAuthExpired::fromOutput($output)
-            : $fallback;
+        if (! $this->auth->looksLikeAuthFailure($output)) {
+            return $fallback;
+        }
+
+        $token = $this->token->status();
+
+        return $token->present
+            ? ClaudeAuthExpired::fromTokenOutput($output, $token, $this->token->path())
+            : ClaudeAuthExpired::fromOutput($output);
     }
 }
