@@ -7,7 +7,7 @@ Release notes are drafted automatically from merged pull requests and published 
 
 This file records anything released before that automation landed.
 
-## v0.4.0
+## v0.4.0 — 2026-09-27
 
 **One token for headless machines.** A long-lived `claude setup-token` OAuth token, stored once per machine, that
 every `claude` process the package spawns authenticates with — ending the macOS Keychain/credentials-file split where
