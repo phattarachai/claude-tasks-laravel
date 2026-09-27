@@ -7,6 +7,28 @@ Release notes are drafted automatically from merged pull requests and published 
 
 This file records anything released before that automation landed.
 
+## v0.4.0
+
+**One token for headless machines.** A long-lived `claude setup-token` OAuth token, stored once per machine, that
+every `claude` process the package spawns authenticates with — ending the macOS Keychain/credentials-file split where
+launchd workers and ssh sessions rotate refresh tokens out from under each other.
+
+- **`php artisan claude-tasks:token`** stores the token (hidden prompt, or `--stdin`) in
+  `~/.config/claude-tasks/token.json` (`0600`, written atomically) with its expiry — one year by default,
+  `--expires=YYYY-MM-DD` to override — then runs a live probe (`--no-probe` skips it). Values not starting with
+  `sk-ant-oat` are rejected. `--status` prints path / issued / expires / days left and exits 1 when missing or expired.
+- **`CLAUDE_CODE_OAUTH_TOKEN` on every run.** `TaskRunner` (sync and streaming) and `ClaudeProbe` share one
+  `ClaudeEnvironment` builder; the token is added to the process env (never argv) whenever the file holds one — even
+  when expired, so it fails clearly instead of falling back to the Keychain. No token file = exactly v0.3 behaviour.
+- **`ClaudeToken` / `ClaudeTokenStatus`** in `Runner\` — `value()`, `status()`, `store()`; `isExpired()`,
+  `daysLeft()`, `expiresWithin()`, `toArray()` — for apps that surface token health themselves.
+- **Auth failures name the token.** With a token configured, `ClaudeAuthExpired` says the token at its path is
+  expired/rejected and to run `claude setup-token` then `claude-tasks:token`, instead of "/login".
+- **Doctor** gains a Token block; an expired token fails it, and with a valid token a missing credentials file is no
+  longer an error and the Keychain warning is replaced by a note that the token overrides it.
+- New config key `claude-tasks.token_path` (`CLAUDE_TASKS_TOKEN_PATH`); an already-published config picks up the
+  default automatically.
+
 ## v0.3.1 — 2026-09-13
 
 - **Fix:** required array/object schema fields no longer reject an empty value. `SchemaRules` now emits

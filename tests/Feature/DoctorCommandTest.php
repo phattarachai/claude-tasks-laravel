@@ -20,16 +20,6 @@ function writeCredentials(int $expiresInDays = 30): string
     return $path;
 }
 
-function probeEnvelope(string $result = 'ok'): string
-{
-    return (string) json_encode([
-        'type' => 'result',
-        'subtype' => 'success',
-        'is_error' => false,
-        'result' => $result,
-    ]);
-}
-
 it('reports a healthy binary and credentials, noting the probe is opt-in', function (): void {
     config()->set('claude-tasks.credentials_path', writeCredentials());
 
@@ -155,3 +145,55 @@ it('stays quiet about the Keychain when no item exists', function (): void {
         ->doesntExpectOutputToContain('Keychain item')
         ->assertSuccessful();
 })->skip(PHP_OS_FAMILY !== 'Darwin', 'the Keychain check only runs on macOS');
+
+it('is healthy on a valid token alone, with no credentials file', function (): void {
+    useValidToken();
+    config()->set('claude-tasks.credentials_path', '/nonexistent/credentials.json');
+
+    Process::fake([
+        '*--version*' => Process::result('2.1.0 (Claude Code)'),
+        '*find-generic-password*' => Process::result('keychain: "login.keychain-db"'),
+    ]);
+
+    $this->artisan('claude-tasks:doctor')
+        ->expectsOutputToContain('not needed, the token is used')
+        ->expectsOutputToContain('pass --probe')
+        ->doesntExpectOutputToContain('/login')
+        ->assertSuccessful();
+});
+
+it('fails on an expired token even when the CLI login is healthy', function (): void {
+    useValidToken(expiresInDays: -2);
+    config()->set('claude-tasks.credentials_path', writeCredentials());
+
+    Process::fake(['*' => Process::result('2.1.0 (Claude Code)')]);
+
+    $this->artisan('claude-tasks:doctor')
+        ->expectsOutputToContain('claude-tasks:token')
+        ->assertFailed();
+});
+
+it('reports no token and keeps the login checks when no token file exists', function (): void {
+    useTokenFile();
+    config()->set('claude-tasks.credentials_path', writeCredentials());
+
+    Process::fake(['*' => Process::result('2.1.0 (Claude Code)')]);
+
+    $this->artisan('claude-tasks:doctor')
+        ->expectsOutputToContain('not configured')
+        ->assertSuccessful();
+});
+
+it('points a token-auth probe failure at setup-token instead of /login', function (): void {
+    useValidToken();
+
+    Process::fake([
+        '*--version*' => Process::result('2.1.0 (Claude Code)'),
+        '*find-generic-password*' => Process::result(exitCode: 1),
+        '*' => Process::result(errorOutput: 'Failed to authenticate: token rejected', exitCode: 1),
+    ]);
+
+    $this->artisan('claude-tasks:doctor', ['--probe' => true])
+        ->expectsOutputToContain('claude setup-token')
+        ->assertFailed();
+});

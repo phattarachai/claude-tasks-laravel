@@ -46,6 +46,7 @@ abstract class TestCase extends BaseTestCase
         ]);
 
         $app['config']->set('claude-tasks.binary', '/usr/local/bin/claude');
+        $app['config']->set('claude-tasks.token_path', sys_get_temp_dir().'/claude-tasks-absent/token.json');
 
         $app['config']->set('task-runs.routes.enabled', false);
         $app['config']->set('task-runs.broadcast.enabled', false);

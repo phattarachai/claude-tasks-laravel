@@ -7,6 +7,7 @@ namespace Phattarachai\ClaudeTasksLaravel;
 use Illuminate\Support\ServiceProvider;
 use Override;
 use Phattarachai\ClaudeTasksLaravel\Console\DoctorCommand;
+use Phattarachai\ClaudeTasksLaravel\Console\TokenCommand;
 
 class ClaudeTasksServiceProvider extends ServiceProvider
 {
@@ -28,6 +29,6 @@ class ClaudeTasksServiceProvider extends ServiceProvider
             __DIR__.'/../config/claude-tasks.php' => config_path('claude-tasks.php'),
         ], 'claude-tasks-config');
 
-        $this->commands([DoctorCommand::class]);
+        $this->commands([DoctorCommand::class, TokenCommand::class]);
     }
 }
