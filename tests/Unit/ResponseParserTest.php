@@ -65,3 +65,60 @@ it('flags an error envelope', function (): void {
 it('throws on unparseable output', function (): void {
     new ResponseParser()->parse('not json at all');
 })->throws(ClaudeProcessFailed::class);
+
+it('reads token counts from modelUsage, summed across models', function (): void {
+    $parsed = new ResponseParser()->parse(claudeEnvelope(['ok' => true], [
+        'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+        'modelUsage' => [
+            'claude-opus-5-5' => [
+                'inputTokens' => 120,
+                'outputTokens' => 900,
+                'cacheReadInputTokens' => 40000,
+                'cacheCreationInputTokens' => 8000,
+                'webSearchRequests' => 3,
+                'costUSD' => 0.4,
+            ],
+            'claude-haiku-4-5' => [
+                'inputTokens' => 30,
+                'outputTokens' => 100,
+                'cacheReadInputTokens' => 0,
+                'cacheCreationInputTokens' => 500,
+                'webSearchRequests' => 0,
+                'costUSD' => 0.01,
+            ],
+        ],
+    ]));
+
+    expect($parsed->usage->inputTokens)->toBe(150)
+        ->and($parsed->usage->outputTokens)->toBe(1000)
+        ->and($parsed->usage->cacheReadTokens)->toBe(40000)
+        ->and($parsed->usage->cacheWriteTokens)->toBe(8500)
+        ->and($parsed->usage->webSearchRequests)->toBe(3)
+        ->and($parsed->usage->models)->toBe(['claude-opus-5-5', 'claude-haiku-4-5'])
+        ->and($parsed->usage->totalTokens())->toBe(49650);
+});
+
+it('falls back to the usage block when there is no modelUsage', function (): void {
+    $parsed = new ResponseParser()->parse(claudeEnvelope(['ok' => true], [
+        'usage' => [
+            'input_tokens' => 10,
+            'output_tokens' => 48,
+            'cache_read_input_tokens' => 22383,
+            'cache_creation_input_tokens' => 8457,
+            'server_tool_use' => ['web_search_requests' => 2],
+        ],
+    ]));
+
+    expect($parsed->usage->inputTokens)->toBe(10)
+        ->and($parsed->usage->cacheReadTokens)->toBe(22383)
+        ->and($parsed->usage->cacheWriteTokens)->toBe(8457)
+        ->and($parsed->usage->webSearchRequests)->toBe(2)
+        ->and($parsed->usage->models)->toBe([]);
+});
+
+it('leaves token counts null on an envelope without any', function (): void {
+    $usage = new ResponseParser()->parse(claudeEnvelope(['ok' => true]))->usage;
+
+    expect($usage->inputTokens)->toBeNull()
+        ->and($usage->totalTokens())->toBeNull();
+});

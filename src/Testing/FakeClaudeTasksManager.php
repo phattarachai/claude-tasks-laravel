@@ -33,6 +33,11 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
     protected array $queued = [];
 
     /**
+     * @var array<class-string, Usage>
+     */
+    protected array $usage = [];
+
+    /**
      * @param  array<class-string<Task>, array<string, mixed>|string|Closure>  $outputs  a string cans a Format::Text reply
      * @param  array<class-string<Task>, list<ProgressEvent>>  $progress
      */
@@ -49,6 +54,19 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
     public function withProgress(string $task, array $events): static
     {
         $this->progress[$task] = $events;
+
+        return $this;
+    }
+
+    /**
+     * The usage a Task's fake response reports — so a caller that records cost or
+     * tokens can be tested. Without it a fake reports an empty {@see Usage}.
+     *
+     * @param  class-string<Task>  $task
+     */
+    public function withUsage(string $task, Usage $usage): static
+    {
+        $this->usage[$task] = $usage;
 
         return $this;
     }
@@ -143,13 +161,13 @@ class FakeClaudeTasksManager extends ClaudeTasksManager
         if (Format::for($task) === Format::Text) {
             $text = is_string($resolved) ? $resolved : FakeOutput::textFor($task);
 
-            return new TaskResponse([], new Usage, $text, $text, $manifest);
+            return new TaskResponse([], $this->usage[$task::class] ?? new Usage, $text, $text, $manifest);
         }
 
         /** @var array<string, mixed> $output */
         $output = $resolved ?? FakeOutput::forTask($task);
 
-        return new TaskResponse($output, new Usage, (string) json_encode($output), '', $manifest);
+        return new TaskResponse($output, $this->usage[$task::class] ?? new Usage, (string) json_encode($output), '', $manifest);
     }
 
     private function fakeManifest(Task $task): RunManifest
