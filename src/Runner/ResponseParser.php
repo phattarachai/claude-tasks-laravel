@@ -118,12 +118,66 @@ class ResponseParser
     private function usageFrom(array $envelope, mixed $numTurns): Usage
     {
         $cost = $envelope['total_cost_usd'] ?? $envelope['cost_usd'] ?? null;
+        $tokens = $this->tokensFrom($envelope);
 
         return new Usage(
             costUsd: is_numeric($cost) ? (float) $cost : null,
             numTurns: is_numeric($numTurns) ? (int) $numTurns : null,
             durationMs: is_numeric($envelope['duration_ms'] ?? null) ? (int) $envelope['duration_ms'] : null,
             sessionId: is_string($envelope['session_id'] ?? null) ? $envelope['session_id'] : null,
+            inputTokens: $tokens['input'],
+            outputTokens: $tokens['output'],
+            cacheReadTokens: $tokens['cache_read'],
+            cacheWriteTokens: $tokens['cache_write'],
+            webSearchRequests: $tokens['web_search'],
+            models: $tokens['models'],
         );
+    }
+
+    /**
+     * Token counts, preferring `modelUsage` — per model, so it also counts a helper
+     * model the CLI ran beside the main one — over the main model's `usage` block.
+     *
+     * @param  array<string, mixed>  $envelope
+     * @return array{input: ?int, output: ?int, cache_read: ?int, cache_write: ?int, web_search: ?int, models: list<string>}
+     */
+    private function tokensFrom(array $envelope): array
+    {
+        $perModel = array_filter((array) ($envelope['modelUsage'] ?? []), is_array(...));
+
+        if ($perModel !== []) {
+            $sum = fn (string $key): ?int => $this->sumOf(array_column($perModel, $key));
+
+            return [
+                'input' => $sum('inputTokens'),
+                'output' => $sum('outputTokens'),
+                'cache_read' => $sum('cacheReadInputTokens'),
+                'cache_write' => $sum('cacheCreationInputTokens'),
+                'web_search' => $sum('webSearchRequests'),
+                'models' => array_map(strval(...), array_keys($perModel)),
+            ];
+        }
+
+        $usage = (array) ($envelope['usage'] ?? []);
+        $count = fn (mixed $value): ?int => is_numeric($value) ? (int) $value : null;
+
+        return [
+            'input' => $count($usage['input_tokens'] ?? null),
+            'output' => $count($usage['output_tokens'] ?? null),
+            'cache_read' => $count($usage['cache_read_input_tokens'] ?? null),
+            'cache_write' => $count($usage['cache_creation_input_tokens'] ?? null),
+            'web_search' => $count($usage['server_tool_use']['web_search_requests'] ?? null),
+            'models' => [],
+        ];
+    }
+
+    /**
+     * @param  array<mixed>  $values
+     */
+    private function sumOf(array $values): ?int
+    {
+        $numbers = array_filter($values, is_numeric(...));
+
+        return $numbers === [] ? null : (int) array_sum($numbers);
     }
 }
