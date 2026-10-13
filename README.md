@@ -245,6 +245,7 @@ without the prompt body.
 ```php
 ClaudeTasks::fake();                                       // schema-derived fake output
 ClaudeTasks::fake([CategorizeStatement::class => [...]]);  // or canned / Closure output
+ClaudeTasks::fake()->withUsage(CategorizeStatement::class, new Usage(costUsd: 0.4, outputTokens: 900));
 
 CategorizeStatement::make($statement)->run();
 

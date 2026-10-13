@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Process;
 use Phattarachai\ClaudeTasksLaravel\Facades\ClaudeTasks;
+use Phattarachai\ClaudeTasksLaravel\Responses\Data\Usage;
 use Phattarachai\ClaudeTasksLaravel\Streaming\AssistantText;
 use Phattarachai\ClaudeTasksLaravel\Streaming\ProgressEvent;
 use Phattarachai\ClaudeTasksLaravel\Streaming\ResultReceived;
@@ -132,4 +133,13 @@ it('skips the progress replay entirely when no listener is attached', function (
     ClaudeTasks::fake()->withProgress(ToolTask::class, [new AssistantText('never seen')]);
 
     expect(ToolTask::make()->run()->output)->toHaveKey('ok');
+});
+
+it('reports the usage given to withUsage, and an empty one otherwise', function (): void {
+    ClaudeTasks::fake()->withUsage(AnalyzeStatementTask::class, new Usage(costUsd: 0.4, outputTokens: 900));
+
+    expect(ClaudeTasks::run(new AnalyzeStatementTask)->usage)
+        ->costUsd->toBe(0.4)
+        ->outputTokens->toBe(900)
+        ->and(ClaudeTasks::run(new SummarizeMonthTask)->usage->costUsd)->toBeNull();
 });
